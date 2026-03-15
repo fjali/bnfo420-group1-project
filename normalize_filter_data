@@ -1,7 +1,7 @@
 #BNFO 420 Capstone
 # Script 02: Normalize and Filter Expression Data
 # Goal: Log2 transform, filter low-expression genes,
-# and produce a gene filtering summary figure
+#       and produce a gene filtering summary figure
 # run after the first script - metadata organization
 
 #load libraries
@@ -79,8 +79,8 @@ cat("Genes removed:", genes_before_iWAT - nrow(expression_iWAT_log), "\n")
 #6. create gene filtering bar chart
 filter_summary <- data.frame(
   tissue = c("Liver", "Liver", "iWAT", "iWAT"),
-  step   = c("Before filtering", "After filtering",
-             "Before filtering", "After filtering"),
+  step   = c("Before Filtering", "After Filtering",
+             "Before Filtering", "After Filtering"),
   genes  = c(
     genes_before_liver, nrow(expression_liver_log),
     genes_before_iWAT,  nrow(expression_iWAT_log)
@@ -88,26 +88,44 @@ filter_summary <- data.frame(
 )
 
 ggplot(filter_summary, aes(x = step, y = genes, fill = step)) +
-  geom_bar(stat = "identity", width = 0.5) +
-  geom_text(aes(label = genes), vjust = -0.5, size = 4, fontface = "bold") +
+  geom_bar(stat = "identity", width = 0.5, color = "white") +
+  geom_text(aes(label = format(genes, big.mark = ",")), 
+            vjust = -0.6, size = 4, fontface = "bold", color = "gray30") +
   scale_fill_manual(values = c(
-    "Before filtering" = "#c0392b",
-    "After filtering"  = "#1e8449"
+    "Before Filtering" = "#f4a7b9",   # light pink
+    "After Filtering"  = "#a8d8ea"    # light blue
   )) +
-  facet_wrap(~ tissue) +
+  scale_y_continuous(
+    labels = scales::comma,
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  facet_wrap(~ tissue, labeller = labeller(tissue = c(
+    "Liver" = "Liver Tissue",
+    "iWAT"  = "Inguinal White Adipose Tissue (iWAT)"
+  ))) +
   labs(
-    title    = "Gene Filtering Summary",
-    subtitle = paste("Kept genes with log2(FPKM+1) >", min_expression,
+    title    = "Gene Expression Filtering Summary",
+    subtitle = paste("Genes retained after removing low-expression genes\n",
+                     "Threshold: log2(FPKM+1) >", min_expression,
                      "in at least", min_samples, "samples"),
-    x        = "",
-    y        = "Number of Genes"
+    x        = "Filtering Step",
+    y        = "Number of Genes",
+    fill     = "Filtering Step"
   ) +
   theme_minimal(base_size = 13) +
-  theme(legend.position = "none")
+  theme(
+    plot.title      = element_text(face = "bold", size = 15, hjust = 0.5),
+    plot.subtitle   = element_text(size = 10, hjust = 0.5, color = "gray40"),
+    axis.title.x    = element_text(face = "bold", margin = margin(t = 10)),
+    axis.title.y    = element_text(face = "bold", margin = margin(r = 10)),
+    strip.text      = element_text(face = "bold", size = 11),
+    legend.position = "none",
+    panel.grid.major.x = element_blank()
+  )
 
 ggsave(
   filename = file.path(figures_dir, "figure1_gene_filtering.png"),
-  width = 7, height = 5, dpi = 300
+  width = 8, height = 6, dpi = 300
 )
 cat("Figure 1 saved: gene filtering bar chart\n")
 
