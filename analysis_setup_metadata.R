@@ -4,67 +4,32 @@
 # Goal: Load expression data, organize metadata, and separate by tissue
 # ============================================================
 
-# ----------------------------
-# 1. Install packages if needed
-# ----------------------------
-if (!requireNamespace("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
-}
+#install packages
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+if (!requireNamespace("limma",       quietly = TRUE)) BiocManager::install("limma")
+if (!requireNamespace("tidyverse",   quietly = TRUE)) install.packages("tidyverse")
+if (!requireNamespace("pheatmap",    quietly = TRUE)) install.packages("pheatmap")
 
-if (!requireNamespace("limma", quietly = TRUE)) {
-  BiocManager::install("limma")
-}
-
-if (!requireNamespace("tidyverse", quietly = TRUE)) {
-  install.packages("tidyverse")
-}
-
-if (!requireNamespace("pheatmap", quietly = TRUE)) {
-  install.packages("pheatmap")
-}
-
-if (!requireNamespace("GEOquery", quietly = TRUE)) {
-  BiocManager::install("GEOquery")
-}
-
-# ----------------------------
-# 2. Load libraries
-# ----------------------------
+#load libraries
 library(limma)
 library(tidyverse)
 library(ggplot2)
 library(pheatmap)
-library(GEOquery)
 
-# ----------------------------
-# 3. Create output folders
-# ----------------------------
-date_stamp <- format(Sys.Date(), "%Y-%m-%d")
+#create output folders
+date_stamp  <- format(Sys.Date(), "%Y-%m-%d")
 figures_dir <- paste0("outputs/", date_stamp, "/figures")
-data_dir <- paste0("outputs/", date_stamp, "/data")
+data_dir    <- paste0("outputs/", date_stamp, "/data")
 
 dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(data_dir,    recursive = TRUE, showWarnings = FALSE)
 
 cat("Outputs will be saved to: outputs/", date_stamp, "\n")
 
-# ----------------------------
-# 4. Load expression data
-# ----------------------------
-# capstonedata.txt.gz is a compressed tab-delimited text file
-# row.names = 1 assumes the first column contains gene IDs
-expression_data <- read.delim("capstonedata.txt.gz", row.names = 1)
+#build metadata table
+# IMPORTANT: This must come BEFORE loading expression data
+# so we can use it to rename columns
 
-# Check that the data loaded correctly
-dim(expression_data)
-head(expression_data[, 1:5])
-
-# Save a copy of the raw expression data
-write.csv(expression_data, file.path(data_dir, "expression_data_raw.csv"))
-
-# ----------------------------
-# 5. Build metadata table
-# ----------------------------
 metadata <- data.frame(
   gsm_id = c(
     # Glp1r fl/fl - Vehicle - Liver (5 samples)
@@ -93,21 +58,21 @@ metadata <- data.frame(
     "GSM8879793","GSM8879798","GSM8879800","GSM8879803","GSM8879809"
   ),
   genotype = c(
-    rep("Glp1r_fl_fl", 20),
+    rep("Glp1r_fl_fl",  20),
     rep("Glp1r_Wnt1KO", 10),
-    rep("Gipr_fl_fl", 20),
-    rep("Gipr_SynKO", 10)
+    rep("Gipr_fl_fl",   20),
+    rep("Gipr_SynKO",   10)
   ),
   treatment = c(
     rep("Vehicle", 5),
     rep("Vehicle", 5),
-    rep("Drug", 5),
-    rep("Drug", 5),
+    rep("Drug",    5),
+    rep("Drug",    5),
     rep("Vehicle", 10),
     rep("Vehicle", 5),
     rep("Vehicle", 5),
-    rep("Drug", 5),
-    rep("Drug", 5),
+    rep("Drug",    5),
+    rep("Drug",    5),
     rep("Vehicle", 10)
   ),
   tissue = c(
@@ -122,48 +87,74 @@ metadata <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Check metadata
-dim(metadata)
+cat("Metadata built:", nrow(metadata), "rows\n")
 head(metadata)
 
-# ----------------------------
-# 6. Make sure sample names match metadata
-# ----------------------------
-all(metadata$gsm_id %in% colnames(expression_data))
-setdiff(metadata$gsm_id, colnames(expression_data))
+# load all 4 expression files
+# Each file = one tissue + one receptor group = 15 samples
+# Total: 4 files x 15 samples = 60 samples
 
-# Reorder metadata to match expression data columns
-metadata <- metadata %>%
-  filter(gsm_id %in% colnames(expression_data)) %>%
-  arrange(match(gsm_id, colnames(expression_data)))
+load_expr <- function(filename) {
+  df <- read.delim(filename,
+                   header      = TRUE,
+                   check.names = FALSE,
+                   sep         = "\t")
+  rownames(df) <- df[, 1]
+  df <- df[, -1]
+  return(df)
+}
 
-# Confirm order matches
-identical(metadata$gsm_id, colnames(expression_data))
+expr_liver_glp1r <- load_expr("/Users/kbandukwala/bnfo420/GSE293291_FPKM_Liver_GLP1R.txt")
+expr_liver_gipr  <- load_expr("/Users/kbandukwala/bnfo420/GSE293291_FPKM_Liver_GIPR.txt")
+expr_iwat_glp1r  <- load_expr("/Users/kbandukwala/bnfo420/GSE293291_FPKM_ING_GLP1R.txt")
+expr_iwat_gipr   <- load_expr("/Users/kbandukwala/bnfo420/GSE293291_FPKM_ING_GIPR.txt")
 
-# ----------------------------
-# 7. Separate metadata by tissue
-# ----------------------------
+cat("Liver GLP1R:", ncol(expr_liver_glp1r), "samples\n")
+cat("Liver GIPR: ", ncol(expr_liver_gipr),  "samples\n")
+cat("iWAT GLP1R: ", ncol(expr_iwat_glp1r),  "samples\n")
+cat("iWAT GIPR:  ", ncol(expr_iwat_gipr),   "samples\n")
+
+#combine all 4 files
+# Order must match metadata order:
+# Liver GLP1R + iWAT GLP1R + Liver GLP1R Drug + iWAT GLP1R Drug +
+# Liver Wnt1KO + iWAT Wnt1KO + Liver GIPR + iWAT GIPR +
+# Liver GIPR Drug + iWAT GIPR Drug + Liver SynKO + iWAT SynKO
+expression_data <- cbind(expr_liver_glp1r, expr_liver_gipr,
+                         expr_iwat_glp1r,  expr_iwat_gipr)
+
+cat("Total samples after combining:", ncol(expression_data), "\n")
+
+#rename columns to the gsm ids
+# The numeric column names need to become GSM IDs
+# We assign them in the same order as our metadata table
+colnames(expression_data) <- metadata$gsm_id
+
+# Confirm renaming worked
+cat("First few column names after renaming:\n")
+print(head(colnames(expression_data)))
+cat("Should show GSM IDs like GSM8879750, GSM8879751...\n")
+
+#separate by tissue
 metadata_liver <- metadata %>% filter(tissue == "Liver")
 metadata_iWAT  <- metadata %>% filter(tissue == "iWAT")
 
-# ----------------------------
-# 8. Separate expression data by tissue
-# ----------------------------
 expression_liver <- expression_data[, metadata_liver$gsm_id]
 expression_iWAT  <- expression_data[, metadata_iWAT$gsm_id]
 
-# Check dimensions
-dim(expression_liver)
-dim(expression_iWAT)
+cat("Liver dataset:", nrow(expression_liver), "genes x", ncol(expression_liver), "samples\n")
+cat("iWAT dataset: ", nrow(expression_iWAT),  "genes x", ncol(expression_iWAT),  "samples\n")
 
-# ----------------------------
-# 9. Save metadata and tissue-specific datasets
-# ----------------------------
-write.csv(metadata, file.path(data_dir, "metadata_all.csv"), row.names = FALSE)
-write.csv(metadata_liver, file.path(data_dir, "metadata_liver.csv"), row.names = FALSE)
-write.csv(metadata_iWAT, file.path(data_dir, "metadata_iWAT.csv"), row.names = FALSE)
+# Should say 30 samples each
 
-write.csv(expression_liver, file.path(data_dir, "expression_liver.csv"))
-write.csv(expression_iWAT, file.path(data_dir, "expression_iWAT.csv"))
+#save everything
+write.csv(metadata,       file.path(data_dir, "metadata_all.csv"),    row.names = FALSE)
+write.csv(metadata_liver, file.path(data_dir, "metadata_liver.csv"),  row.names = FALSE)
+write.csv(metadata_iWAT,  file.path(data_dir, "metadata_iWAT.csv"),   row.names = FALSE)
 
-cat("Metadata and tissue-specific expression files saved successfully.\n")
+write.table(expression_liver, file.path(data_dir, "expression_liver.csv"),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE)
+write.table(expression_iWAT,  file.path(data_dir, "expression_iWAT.csv"),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE)
+
+cat("All files saved successfully.\n")
+cat("Script 01 complete. Run Script 02 next.\n")
