@@ -1,1 +1,122 @@
+# ============================================================
+# BNFO 420 Capstone
+# Script 02: Normalize and Filter Expression Data
+# Goal: Log2 transform, filter low-expression genes,
+#       and produce a gene filtering summary figure
+#run after the analysis_setup_metadata file
 
+#load libraries
+library(limma)
+library(tidyverse)
+library(ggplot2)
+
+#recreate output folders
+date_stamp  <- format(Sys.Date(), "%Y-%m-%d")
+figures_dir <- paste0("outputs/", date_stamp, "/figures")
+data_dir    <- paste0("outputs/", date_stamp, "/data")
+
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(data_dir,    recursive = TRUE, showWarnings = FALSE)
+
+#load data saved from script 1
+expression_liver <- read.csv(file.path(data_dir, "expression_liver.csv"), 
+                             row.names    = 1,
+                             check.names  = FALSE)
+expression_iWAT  <- read.csv(file.path(data_dir, "expression_iWAT.csv"),  
+                             row.names    = 1,
+                             check.names  = FALSE)
+metadata_liver   <- read.csv(file.path(data_dir, "metadata_liver.csv"),
+                             check.names  = FALSE)
+metadata_iWAT    <- read.csv(file.path(data_dir, "metadata_iWAT.csv"),
+                             check.names  = FALSE)
+
+#confirm they loaded correctly
+cat("Liver:", nrow(expression_liver), "genes x", ncol(expression_liver), "samples\n")
+cat("iWAT: ", nrow(expression_iWAT),  "genes x", ncol(expression_iWAT),  "samples\n")
+
+#log2 transformation
+# We use log2(value + 1) to:
+# - Bring large values down to a workable scale
+# - The +1 prevents log(0) which is undefined
+# - Makes the data more normally distributed for statistics
+
+expression_liver_log <- log2(expression_liver + 1)
+expression_iWAT_log  <- log2(expression_iWAT  + 1)
+
+cat("Log2 transformation complete.\n")
+
+#filter low expression genes
+# We remove genes that are barely expressed across all samples
+# because they are just noise and can mess up our statistics
+#
+# Rule: keep a gene only if it has expression > 1 (log2 scale)
+#       in at least 5 samples (= one full biological replicate group)
+
+min_expression <- 1   # log2(FPKM + 1) must be above this
+min_samples    <- 5   # in at least this many samples
+
+# Record gene counts before filtering
+genes_before_liver <- nrow(expression_liver_log)
+genes_before_iWAT  <- nrow(expression_iWAT_log)
+
+# Apply filter to Liver
+keep_liver           <- rowSums(expression_liver_log > min_expression) >= min_samples
+expression_liver_log <- expression_liver_log[keep_liver, ]
+
+# Apply filter to iWAT
+keep_iWAT           <- rowSums(expression_iWAT_log > min_expression) >= min_samples
+expression_iWAT_log <- expression_iWAT_log[keep_iWAT, ]
+
+cat("--- Liver filtering ---\n")
+cat("Genes before:", genes_before_liver, "\n")
+cat("Genes after: ", nrow(expression_liver_log), "\n")
+cat("Genes removed:", genes_before_liver - nrow(expression_liver_log), "\n\n")
+
+cat("--- iWAT filtering ---\n")
+cat("Genes before:", genes_before_iWAT, "\n")
+cat("Genes after: ", nrow(expression_iWAT_log), "\n")
+cat("Genes removed:", genes_before_iWAT - nrow(expression_iWAT_log), "\n")
+
+#gene filtering bar chart
+# This is Figure 1 -- shows we cleaned the data responsibly
+
+filter_summary <- data.frame(
+  tissue = c("Liver", "Liver", "iWAT", "iWAT"),
+  step   = c("Before filtering", "After filtering",
+             "Before filtering", "After filtering"),
+  genes  = c(
+    genes_before_liver, nrow(expression_liver_log),
+    genes_before_iWAT,  nrow(expression_iWAT_log)
+  )
+)
+
+ggplot(filter_summary, aes(x = step, y = genes, fill = step)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = genes), vjust = -0.5, size = 4, fontface = "bold") +
+  scale_fill_manual(values = c(
+    "Before filtering" = "#c0392b",
+    "After filtering"  = "#1e8449"
+  )) +
+  facet_wrap(~ tissue) +
+  labs(
+    title    = "Gene Filtering Summary",
+    subtitle = paste("Kept genes with log2(FPKM+1) >", min_expression,
+                     "in at least", min_samples, "samples"),
+    x        = "",
+    y        = "Number of Genes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(
+  filename = file.path(figures_dir, "figure1_gene_filtering.png"),
+  width = 7, height = 5, dpi = 300
+)
+cat("Figure 1 saved: gene filtering bar chart\n")
+
+#save filtered expression data
+write.csv(expression_liver_log, file.path(data_dir, "expression_liver_filtered.csv"))
+write.csv(expression_iWAT_log,  file.path(data_dir, "expression_iWAT_filtered.csv"))
+
+cat("Filtered expression data saved successfully.\n")
+cat("Script 02 complete. Run Script 03 (PCA) next.\n")
