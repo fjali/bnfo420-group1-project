@@ -1,1 +1,67 @@
 #pca_plot
+#library(ggplot2)
+expr <- read.delim(
+  "~/Downloads/GSE293291_FPKM_Liver_GLP1R.txt",
+  header = TRUE,
+  row.names = 1,
+  check.names = FALSE
+)
+dim(expr)
+expr_log <- log2(expr + 1)
+dim(expr_log)
+expr_log_filtered <- expr_log[apply(expr_log, 1, var) != 0, ]
+dim(expr_log_filtered)
+dim(expr_log_filtered)
+pca <- prcomp(t(expr_log_filtered), center = TRUE, scale. = TRUE)
+
+percentVar <- (pca$sdev^2) / sum(pca$sdev^2)
+
+pca_df <- as.data.frame(pca$x)
+pca_df$sample <- rownames(pca_df)
+
+xlab <- paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance")
+ylab <- paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
+ggplot(pca_df, aes(PC1, PC2)) +
+  geom_point(size = 4, alpha = 0.85) +
+  theme_minimal() +
+  labs(title = "PCA – Liver GLP1R Cohort", x = xlab, y = ylab)
+colnames(expr)
+pca_df$sample
+pca_df$group <- c(
+  rep("Vehicle", 10),
+  rep("Treatment", 5)
+)
+ggplot(pca_df, aes(PC1, PC2, color = group)) +
+  geom_point(size = 4) +
+  theme_minimal() +
+  labs(
+    title = "PCA – Liver GLP1R Cohort",
+    x = xlab,
+    y = ylab,
+    color = "Condition"
+  )
+ggplot(pca_df, aes(PC1, PC2, color = group)) +
+  geom_point(size = 4) +
+  theme_minimal() +
+  labs(
+    title = "PCA – Liver GLP1R Cohort",
+    x = xlab,
+    y = ylab,
+    color = "Condition"
+  )
+xlab <- paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance")
+ylab <- paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
+color = "Treatment
+ggplot(pca_df, aes(PC1, PC2, color = group)) +
+  geom_point(size = 4) +
+  stat_ellipse(level = 0.8) +
+  theme_minimal() +
+  labs(
+    title = "PCA – Liver GLP1R Cohort",
+    x = xlab,
+    y = ylab,
+    color = "Treatment"
+  )
+  ggsave("PCA_Liver_GLP1R.png", width = 7, height = 5, dpi = 300)
+  
+  
