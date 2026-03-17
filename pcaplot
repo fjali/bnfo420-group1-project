@@ -1,76 +1,65 @@
 #pca_plot
-# load required library
-library(ggplot2)
+# BNFO 420 Capstone
+# Script 03: PCA
 
-# load expression data 
-expr <- read.delim(
-  "~/Downloads/GSE293291_FPKM_Liver_GLP1R.txt",
-  header = TRUE,
+library(ggplot2)
+library(dplyr)
+
+# set output folders
+date_stamp  <- format(Sys.Date(), "%Y-%m-%d")
+figures_dir <- paste0("outputs/", date_stamp, "/figures")
+data_dir    <- paste0("outputs/", date_stamp, "/data")
+
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# load filtered expression data from Script 02
+expr <- read.csv(
+  file.path(data_dir, "expression_liver_filtered.csv"),
   row.names = 1,
   check.names = FALSE
 )
 
-# check data dimensions
-dim(expr)
+# load metadata
+metadata_liver <- read.csv(
+  file.path(data_dir, "metadata_liver.csv"),
+  check.names = FALSE
+)
 
-# log transform to stabilize variance
-expr_log <- log2(expr + 1)
-dim(expr_log)
+# subset to GLP1R control (fl/fl)
+metadata_glp1r <- metadata_liver %>%
+  filter(genotype == "Glp1r_fl_fl")
 
-# remove zero variance genes (fix PCA scaling error)
-expr_log_filtered <- expr_log[apply(expr_log, 1, var) != 0, ]
-dim(expr_log_filtered)
-dim(expr_log_filtered)
+expr_glp1r <- expr[, metadata_glp1r$gsm_id]
 
-# perfom PCA (transpose so samples = rows)
-pca <- prcomp(t(expr_log_filtered), center = TRUE, scale. = TRUE)
+# remove genes with zero variance (prevents PCA errors)
+expr_glp1r <- expr_glp1r[apply(expr_glp1r, 1, var) != 0, ]
 
-# calculate percent variance explained by each PC
+# run PCA
+pca <- prcomp(t(expr_glp1r), center = TRUE, scale. = TRUE)
+
+# percent variance explained
 percentVar <- (pca$sdev^2) / sum(pca$sdev^2)
 
-# convert PCA output to dataframe
+# create dataframe for plotting
 pca_df <- as.data.frame(pca$x)
 pca_df$sample <- rownames(pca_df)
 
-# label axes with variance explained
-
-xlab <- paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance")
-ylab <- paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
-
-# plot PCA with clustering ellipses
-ggplot(pca_df, aes(PC1, PC2)) +
-  geom_point(size = 4, alpha = 0.85) +
-  theme_minimal() +
-  labs(title = "PCA – Liver GLP1R Cohort", x = xlab, y = ylab)
-colnames(expr)
-pca_df$sample
-pca_df$group <- c(
-  rep("Vehicle", 10),
-  rep("Treatment", 5)
+# add treatment info
+pca_df <- left_join(
+  pca_df,
+  metadata_glp1r[, c("gsm_id", "treatment")],
+  by = c("sample" = "gsm_id")
 )
-ggplot(pca_df, aes(PC1, PC2, color = group)) +
-  geom_point(size = 4) +
-  theme_minimal() +
-  labs(
-    title = "PCA – Liver GLP1R Cohort",
-    x = xlab,
-    y = ylab,
-    color = "Condition"
-  )
-ggplot(pca_df, aes(PC1, PC2, color = group)) +
-  geom_point(size = 4) +
-  theme_minimal() +
-  labs(
-    title = "PCA – Liver GLP1R Cohort",
-    x = xlab,
-    y = ylab,
-    color = "Condition"
-  )
+
+# axis labels
 xlab <- paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance")
 ylab <- paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
-color = "Treatment
-ggplot(pca_df, aes(PC1, PC2, color = group)) +
-  geom_point(size = 4) +
+
+pca_df$treatment[pca_df$treatment == "Drug"] <- "Treatment"
+
+# PCA plot
+ggplot(pca_df, aes(PC1, PC2, color = treatment)) +
+  geom_point(size = 4, alpha = 0.85) +
   stat_ellipse(level = 0.8) +
   theme_minimal() +
   labs(
@@ -79,7 +68,14 @@ ggplot(pca_df, aes(PC1, PC2, color = group)) +
     y = ylab,
     color = "Treatment"
   )
+
 # save plot
-  ggsave("PCA_Liver_GLP1R.png", width = 7, height = 5, dpi = 300)
-  
-  
+ggsave(
+  filename = file.path(figures_dir, "PCA_Liver_GLP1R.png"),
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+
+cat("PCA plot saved successfully.\n")
+cat("Script 03 complete.\n")  
