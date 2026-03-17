@@ -1,26 +1,43 @@
 #pca_plot
-#library(ggplot2)
+# load required library
+library(ggplot2)
+
+# load expression data 
 expr <- read.delim(
   "~/Downloads/GSE293291_FPKM_Liver_GLP1R.txt",
   header = TRUE,
   row.names = 1,
   check.names = FALSE
 )
+
+# check data dimensions
 dim(expr)
+
+# log transform to stabilize variance
 expr_log <- log2(expr + 1)
 dim(expr_log)
+
+# remove zero variance genes (fix PCA scaling error)
 expr_log_filtered <- expr_log[apply(expr_log, 1, var) != 0, ]
 dim(expr_log_filtered)
 dim(expr_log_filtered)
+
+# perfom PCA (transpose so samples = rows)
 pca <- prcomp(t(expr_log_filtered), center = TRUE, scale. = TRUE)
 
+# calculate percent variance explained by each PC
 percentVar <- (pca$sdev^2) / sum(pca$sdev^2)
 
+# convert PCA output to dataframe
 pca_df <- as.data.frame(pca$x)
 pca_df$sample <- rownames(pca_df)
 
+# label axes with variance explained
+
 xlab <- paste0("PC1: ", round(percentVar[1] * 100, 1), "% variance")
 ylab <- paste0("PC2: ", round(percentVar[2] * 100, 1), "% variance")
+
+# plot PCA with clustering ellipses
 ggplot(pca_df, aes(PC1, PC2)) +
   geom_point(size = 4, alpha = 0.85) +
   theme_minimal() +
@@ -62,6 +79,7 @@ ggplot(pca_df, aes(PC1, PC2, color = group)) +
     y = ylab,
     color = "Treatment"
   )
+# save plot
   ggsave("PCA_Liver_GLP1R.png", width = 7, height = 5, dpi = 300)
   
   
