@@ -1,1 +1,156 @@
+# ============================================================
+# bnfo 420 capstone
+# script 05: volcano plots for all comparisons
+# ============================================================
+# run after script 04 (limma differential expression)
+# loads saved deg results and makes all 4 volcano plots
+# ============================================================
 
+# ----------------------------
+# load libraries
+# ----------------------------
+library(ggplot2)
+library(tidyverse)
+library(ggrepel)
+
+# ----------------------------
+# set file paths
+# ----------------------------
+data_dir    <- "/Users/kbandukwala/bnfo420/outputs/2026-03-15/data"
+figures_dir <- "/Users/kbandukwala/bnfo420/outputs/2026-03-15/figures"
+
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# ----------------------------
+# define hypothesis genes to highlight on every plot
+# ----------------------------
+hypothesis_genes <- c(
+  "Glp1r", "Gipr", "Prkaca", "Prkacb",
+  "Prkar1a", "Prkar2a", "Creb1", "Adcy1", "Adcy2"
+)
+
+# ============================================================
+# function: make_volcano
+# loads one deg results file and produces one volcano plot
+# ============================================================
+make_volcano <- function(results_filename, plot_title, plot_subtitle, output_filename) {
+  
+  cat("\n--- making volcano plot:", plot_title, "---\n")
+  
+  # load results
+  results <- read.csv(
+    file.path(data_dir, results_filename),
+    row.names   = 1,
+    check.names = FALSE
+  )
+  
+  # flag hypothesis genes
+  results$is_hypothesis_gene <- rownames(results) %in% hypothesis_genes
+  results$gene_name          <- rownames(results)
+  
+  # print summary
+  cat("upregulated genes (FDR<0.05, logFC>1):  ",
+      sum(results$significance == "Upregulated"), "\n")
+  cat("downregulated genes (FDR<0.05, logFC<-1):",
+      sum(results$significance == "Downregulated"), "\n")
+  cat("hypothesis genes found:\n")
+  print(results[results$is_hypothesis_gene,
+                c("logFC", "adj.P.Val", "significance")])
+  
+  # make plot
+  p <- ggplot(results,
+              aes(x = logFC,
+                  y = -log10(adj.P.Val),
+                  color = significance)) +
+    
+    # plot all genes as dots
+    geom_point(alpha = 0.4, size = 1.2) +
+    
+    # highlight hypothesis genes in purple
+    geom_point(data = results[results$is_hypothesis_gene, ],
+               aes(x = logFC, y = -log10(adj.P.Val)),
+               color = "#8e44ad", size = 4, shape = 18) +
+    
+    # spread out hypothesis gene labels so they don't overlap
+    ggrepel::geom_text_repel(
+      data = results[results$is_hypothesis_gene, ],
+      aes(label = gene_name),
+      color        = "black",
+      size         = 3,
+      box.padding  = 0.5,
+      point.padding = 0.3,
+      segment.color = "gray60",
+      segment.size  = 0.3,
+      max.overlaps  = Inf) +
+    
+    # significance threshold lines
+    geom_hline(yintercept = -log10(0.05),
+               linetype = "dashed", color = "gray40", linewidth = 0.5) +
+    geom_vline(xintercept = c(-1, 1),
+               linetype = "dashed", color = "gray40", linewidth = 0.5) +
+    
+    # colors - dark pink for upregulated, dark blue for downregulated
+    scale_color_manual(values = c(
+      "Upregulated"     = "#c2185b",   # dark pink
+      "Downregulated"   = "#1565c0",   # dark blue
+      "Not Significant" = "#d3d3d3"    # light gray
+    )) +
+    
+    labs(
+      title    = plot_title,
+      subtitle = plot_subtitle,
+      x        = "Log2 Fold Change",
+      y        = "-log10(Adjusted P-value)",
+      color    = "Significance",
+      caption  = "purple diamonds = hypothesis genes (GLP1R, cAMP/PKA pathway)"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.title    = element_text(face = "bold", size = 14, hjust = 0.5),
+      plot.subtitle = element_text(size = 11, hjust = 0.5, color = "gray40"),
+      legend.position = "top"
+    )
+  
+  ggsave(file.path(figures_dir, output_filename),
+         plot = p, width = 8, height = 6, dpi = 300)
+  
+  cat("saved:", output_filename, "\n")
+}
+
+# ============================================================
+# make all 4 volcano plots
+# ============================================================
+
+# plot 1: treatment effect in liver
+make_volcano(
+  results_filename = "DEG_Treatment_Glp1r_fl_fl_Liver.csv",
+  plot_title       = "Volcano Plot: Liver — Treatment Effect (Glp1r fl/fl)",
+  plot_subtitle    = "Drug vs Vehicle",
+  output_filename  = "volcano_01_treatment_liver.png"
+)
+
+# plot 2: glp1r knockout vs control in liver
+make_volcano(
+  results_filename = "DEG_GLP1R_KO_vs_Control_Liver.csv",
+  plot_title       = "Volcano Plot: Liver — GLP1R Knockout vs Control",
+  plot_subtitle    = "Glp1r Wnt1-/- vs Glp1r fl/fl (vehicle only)",
+  output_filename  = "volcano_02_glp1r_ko_liver.png"
+)
+
+# plot 3: gipr knockout vs control in liver
+make_volcano(
+  results_filename = "DEG_GIPR_KO_vs_Control_Liver.csv",
+  plot_title       = "Volcano Plot: Liver — GIPR Knockout vs Control",
+  plot_subtitle    = "Gipr Syn-/- vs Gipr fl/fl (vehicle only)",
+  output_filename  = "volcano_03_gipr_ko_liver.png"
+)
+
+# plot 4: treatment effect in iwat
+make_volcano(
+  results_filename = "DEG_Treatment_Glp1r_fl_fl_iWAT.csv",
+  plot_title       = "Volcano Plot: iWAT — Treatment Effect (Glp1r fl/fl)",
+  plot_subtitle    = "Drug vs Vehicle",
+  output_filename  = "volcano_04_treatment_iwat.png"
+)
+
+cat("\nall volcano plots saved to:", figures_dir, "\n")
