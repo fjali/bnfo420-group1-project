@@ -1,1 +1,206 @@
+#script 4 limma differential expression
+# bnfo 420 capstone
+# script 04: differential expression analysis with limma
+# goal: find which genes are significantly different between
+#       our comparison groups in liver and iwat tissue
+# run after script 03 (pca quality check)
 
+# 1. load libraries
+
+library(limma)
+library(tidyverse)
+
+# 2. set file paths to where data is saved
+
+data_dir    <- "/Users/kbandukwala/bnfo420/outputs/2026-03-15/data"
+figures_dir <- "/Users/kbandukwala/bnfo420/outputs/2026-03-15/figures"
+
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 3. load filtered data from script 02
+
+expression_liver <- read.csv(file.path(data_dir, "expression_liver_filtered.csv"),
+                             row.names   = 1,
+                             check.names = FALSE)
+expression_iWAT  <- read.csv(file.path(data_dir, "expression_iWAT_filtered.csv"),
+                             row.names   = 1,
+                             check.names = FALSE)
+metadata_liver   <- read.csv(file.path(data_dir, "metadata_liver.csv"),
+                             check.names = FALSE)
+metadata_iWAT    <- read.csv(file.path(data_dir, "metadata_iWAT.csv"),
+                             check.names = FALSE)
+
+cat("liver loaded:", nrow(expression_liver), "genes x", ncol(expression_liver), "samples\n")
+cat("iwat loaded: ", nrow(expression_iWAT),  "genes x", ncol(expression_iWAT),  "samples\n")
+
+
+# how limma works:
+#
+# step 1 - lmFit():
+#   fits a linear model to each gene
+#   the design matrix tells it which samples belong to which group
+#   think of it as running a regression for every gene at once
+#
+# step 2 - eBayes():
+#   applies empirical bayes shrinkage
+#   borrows information across all genes to stabilize variance
+#   this is what makes limma reliable with only n=5 per group
+#
+# step 3 - topTable():
+#   ranks genes by statistical significance
+#   returns: logFC (fold change), p-value, adjusted p-value (FDR)
+#   adj.P.Val < 0.05 means the result is statistically significant
+#   logFC > 1 means the gene doubled in expression
+#   logFC < -1 means the gene halved in expression
+
+
+# 4. define hypothesis genes to track
+
+# these are the genes specifically mentioned in our hypothesis
+# we will check whether these show up as significant in each comparison
+hypothesis_genes <- c(
+  "Glp1r",    # glp-1 receptor - main gene of interest
+  "Gipr",     # gip receptor
+  "Prkaca",   # camp/pka pathway - catalytic subunit
+  "Prkacb",   # camp/pka pathway - catalytic subunit
+  "Prkar1a",  # camp/pka pathway - regulatory subunit
+  "Prkar2a",  # camp/pka pathway - regulatory subunit
+  "Creb1",    # downstream of pka - transcription factor
+  "Adcy1",    # adenylyl cyclase - makes camp
+  "Adcy2"     # adenylyl cyclase
+)
+
+
+# function: run_limma_comparison
+# runs the full limma pipeline for one comparison
+# saves results as a csv file for use in the volcano plot script
+
+run_limma_comparison <- function(expr_matrix, meta,
+                                 group_col, ref_group, test_group,
+                                 comparison_name, data_dir) {
+  
+  cat("\n--- running:", comparison_name, "---\n")
+  
+  # subset to only the groups we are comparing
+  keep_samples <- meta[[group_col]] %in% c(ref_group, test_group)
+  meta_sub     <- meta[keep_samples, ]
+  expr_sub     <- expr_matrix[, meta_sub$gsm_id]
+  
+  cat("samples in comparison:", ncol(expr_sub), "\n")
+  cat("reference group:", ref_group, "| test group:", test_group, "\n")
+  
+  # build design matrix
+  # this tells limma which sample belongs to which group
+  group    <- factor(meta_sub[[group_col]], levels = c(ref_group, test_group))
+  design   <- model.matrix(~ group)
+  colnames(design) <- c("Intercept", "GroupEffect")
+  
+  # step 1: fit linear model to each gene
+  fit  <- lmFit(as.matrix(expr_sub), design)
+  
+  # step 2: apply empirical bayes moderation
+  fit2 <- eBayes(fit)
+  
+  # step 3: extract results for all genes
+  results <- topTable(fit2, coef = "GroupEffect",
+                      number        = Inf,
+                      adjust.method = "BH",
+                      sort.by       = "P")
+  
+  #add significance labels
+  results$significance <- "Not Significant"
+  results$significance[results$adj.P.Val < 0.05 & results$logFC >  1] <- "Upregulated"
+  results$significance[results$adj.P.Val < 0.05 & results$logFC < -1] <- "Downregulated"
+  
+  # flag hypothesis genes
+  results$is_hypothesis_gene <- rownames(results) %in% hypothesis_genes
+  results$gene_name          <- rownames(results)
+  
+  # print summary
+  cat("upregulated genes (FDR<0.05, logFC>1):  ",
+      sum(results$significance == "Upregulated"), "\n")
+  cat("downregulated genes (FDR<0.05, logFC<-1):",
+      sum(results$significance == "Downregulated"), "\n")
+  
+  # print hypothesis gene results
+  hyp_found <- results[results$is_hypothesis_gene,
+                       c("logFC", "adj.P.Val", "significance")]
+  if (nrow(hyp_found) > 0) {
+    cat("hypothesis genes found:\n")
+    print(hyp_found)
+  }
+  
+  # save results table as csv for volcano plot script
+  safe_name <- gsub("[^a-zA-Z0-9]", "_", comparison_name)
+  write.csv(results,
+            file.path(data_dir, paste0("DEG_", safe_name, ".csv")))
+  cat("results saved:", paste0("DEG_", safe_name, ".csv"), "\n")
+  
+  return(results)
+}
+
+#run all four comparisons
+
+# comparison 1: treatment effect in glp1r controls - liver
+meta_glp1r_liver <- metadata_liver %>% filter(genotype == "Glp1r_fl_fl")
+expr_glp1r_liver <- expression_liver[, meta_glp1r_liver$gsm_id]
+
+results_comp1_liver <- run_limma_comparison(
+  expr_matrix     = expr_glp1r_liver,
+  meta            = meta_glp1r_liver,
+  group_col       = "treatment",
+  ref_group       = "Vehicle",
+  test_group      = "Drug",
+  comparison_name = "Treatment_Glp1r_fl_fl_Liver",
+  data_dir        = data_dir
+)
+
+# comparison 2: glp1r knockout vs control - liver, vehicle only
+meta_glpKO_liver <- metadata_liver %>%
+  filter(genotype %in% c("Glp1r_fl_fl", "Glp1r_Wnt1KO"),
+         treatment == "Vehicle")
+expr_glpKO_liver <- expression_liver[, meta_glpKO_liver$gsm_id]
+
+results_comp2_liver <- run_limma_comparison(
+  expr_matrix     = expr_glpKO_liver,
+  meta            = meta_glpKO_liver,
+  group_col       = "genotype",
+  ref_group       = "Glp1r_fl_fl",
+  test_group      = "Glp1r_Wnt1KO",
+  comparison_name = "GLP1R_KO_vs_Control_Liver",
+  data_dir        = data_dir
+)
+
+# comparison 3: gipr knockout vs control - liver, vehicle only
+meta_giprKO_liver <- metadata_liver %>%
+  filter(genotype %in% c("Gipr_fl_fl", "Gipr_SynKO"),
+         treatment == "Vehicle")
+expr_giprKO_liver <- expression_liver[, meta_giprKO_liver$gsm_id]
+
+results_comp3_liver <- run_limma_comparison(
+  expr_matrix     = expr_giprKO_liver,
+  meta            = meta_giprKO_liver,
+  group_col       = "genotype",
+  ref_group       = "Gipr_fl_fl",
+  test_group      = "Gipr_SynKO",
+  comparison_name = "GIPR_KO_vs_Control_Liver",
+  data_dir        = data_dir
+)
+
+# comparison 4: treatment effect in glp1r controls - iwat
+meta_glp1r_iWAT <- metadata_iWAT %>% filter(genotype == "Glp1r_fl_fl")
+expr_glp1r_iWAT <- expression_iWAT[, meta_glp1r_iWAT$gsm_id]
+
+results_comp1_iWAT <- run_limma_comparison(
+  expr_matrix     = expr_glp1r_iWAT,
+  meta            = meta_glp1r_iWAT,
+  group_col       = "treatment",
+  ref_group       = "Vehicle",
+  test_group      = "Drug",
+  comparison_name = "Treatment_Glp1r_fl_fl_iWAT",
+  data_dir        = data_dir
+)
+
+cat("\nscript 04 complete.\n")
+cat("all deg results saved to:", data_dir, "\n")
+cat("run script 05 (volcano plots) next.\n")
