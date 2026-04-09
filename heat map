@@ -1,1 +1,71 @@
 #pheatmap 
+# =====================================
+# heatmap for GLP-1 pathway genes (liver)
+# bnfo 420 capstone
+# =====================================
+
+library(pheatmap)
+install.packages("pheatmap")
+library(pheatmap)
+expr <- read.delim(
+  "~/Downloads/GSE293291_FPKM_Liver_GLP1R.txt",
+  header = TRUE,
+  row.names = 1,
+  check.names = FALSE
+)
+expr_log <- log2(expr + 1)
+expr_log_filtered <- expr_log[apply(expr_log, 1, var) != 0, ]
+genes_of_interest <- c(
+  "Glp1r",
+  "Prkaca",
+  "Prkacb",
+  "Prkar1a",
+  "Prkar2a",
+  "Creb1",
+  "Adcy1"
+)
+heatmap_data <- expr_log_filtered[
+  rownames(expr_log_filtered) %in% genes_of_interest,
+]
+dim(heatmap_data)
+rownames(heatmap_data)
+pheatmap(heatmap_data)
+my_colors <- colorRampPalette(c("#2166ac", "white", "#b2182b"))(100)
+
+pheatmap(
+  heatmap_data,
+  scale = "row",
+  color = my_colors,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "GLP-1 pathway gene expression (liver)"
+)
+png("~/Downloads/heatmap_liver_glp1.png", width = 1200, height = 1000, res = 200)
+
+pheatmap(
+  heatmap_data,
+  scale = "row",
+  color = my_colors,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "GLP-1 pathway gene expression (liver)"
+)
+
+dev.off()
+pheatmap(heatmap_data)
+library(pheatmap)
+
+pheatmap(heatmap_data)
+dev.new()
+pheatmap(heatmap_data)
+pheatmap(
+  heatmap_data,
+  scale = "row",
+  color = my_colors,
+  breaks = my_breaks,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "GLP-1 Pathway Heatmap"
+)
